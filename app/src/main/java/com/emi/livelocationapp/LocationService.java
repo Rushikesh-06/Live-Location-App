@@ -1,5 +1,7 @@
 package com.emi.livelocationapp;
 
+import android.Manifest;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -7,98 +9,135 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.location.Location;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.model.LatLng;
 
-public class LocationService extends Service {
+import java.util.ArrayList;
 
-    private LocationCallback locationCallback = new LocationCallback() {
+public class LocationService extends Service{
+
+        public static ArrayList<LatLng> locationArrayList = new ArrayList<LatLng>();
+
+        FusedLocationProviderClient fusedLocationClient;
+        LocationRequest locationRequest;
+        LocationCallback locationCallback;
+
+        private void startLocationUpdates() {
+            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            fusedLocationClient.requestLocationUpdates(locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper());
+        }
+
+        protected void createLocationRequest() {
+            LocationRequest locationRequest = LocationRequest.create();
+            locationRequest.setInterval(3000);
+            locationRequest.setFastestInterval(5000);
+            locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        }
+
         @Override
-        public void onLocationResult(@NonNull LocationResult locationResult) {
-            super.onLocationResult(locationResult);
-            if (locationResult != null && locationResult.getLastLocation() != null) {
-                double latitude = locationResult.getLastLocation().getLatitude();
-                double longitude = locationResult.getLastLocation().getLongitude();
-                Log.d("UPDATED_LOCATION", latitude + "," + longitude);
-            }
-        }
-    };
+        public void onCreate() {
+            super.onCreate();
 
-    @Nullable
-    @Override
-    public IBinder onBind(Intent intent) {
-        throw new UnsupportedOperationException("Not Yet Implemented");
-    }
+            new Notification();
 
-    private void startLocationService() {
-        String channelId = "location_notification_channel";
-        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        Intent resultIntent = new Intent();
-        PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(),
-                0,
-                resultIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), channelId);
-        builder.setSmallIcon(R.mipmap.ic_launcher);
-        builder.setContentTitle("Location Service");
-        builder.setDefaults(NotificationCompat.DEFAULT_ALL);
-        builder.setContentText("Running");
-        builder.setContentIntent(pendingIntent);
-        builder.setAutoCancel(false);
-        builder.setPriority(NotificationCompat.PRIORITY_MAX);
+            fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (notificationManager != null && notificationManager.getNotificationChannel(channelId) == null) {
-                NotificationChannel notificationChannel = new NotificationChannel(channelId, "Location Service",
-                        NotificationManager.IMPORTANCE_HIGH);
-                notificationChannel.setDescription("This channel is used by location Service");
-                notificationManager.createNotificationChannel(notificationChannel);
-            }
-        }
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O) createNotificationChanel() ;
+            else startForeground(
+                    1,
+                    new Notification()
+            );
 
-        LocationRequest locationRequest = new LocationRequest();
-        locationRequest.setInterval(10000);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+            locationRequest = LocationRequest.create();
+            locationRequest.setInterval(3000);
+            locationRequest.setFastestInterval(3000);
+            locationRequest.setMaxWaitTime(5000);
+            locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
 
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
-        LocationServices.getFusedLocationProviderClient(this).requestLocationUpdates(locationRequest, locationCallback
-                , Looper.getMainLooper());
-        startForeground(Constants.LOCATION_SERVICE_ID,builder.build());
-    }
+            locationCallback = new LocationCallback() {
+                @Override
+                public void onLocationResult(@NonNull LocationResult locationResult) {
+                    Location location =  locationResult.getLastLocation();
+                    Toast.makeText(getApplicationContext(),
+                            "Lat: "+Double.toString(location.getLatitude()) + '\n' +
+                                    "Long: " + Double.toString(location.getLongitude()), Toast.LENGTH_LONG).show();
 
-    private void stopLocationService(){
-        LocationServices.getFusedLocationProviderClient(this).removeLocationUpdates(locationCallback);
-        stopForeground(true);
-        stopSelf();
-    }
+                    //locationArrayList.add(new LatLng(location.getLatitude(), location.getLongitude()));
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null){
-            String action = intent.getAction();
-            if (action != null){
-                if (action.equals(Constants.ACTION_START_LOCATION_SERVICE)){
-                    startLocationService();
-                }else if (action.equals(Constants.ACTION_STOP_LOCATION_SERVICE))
-                {
-                    startLocationService();
+               /* for (Location location : locationResult.getLocations()) {
+                  location
+                }*/
                 }
-            }
+            };
+            startLocationUpdates();
         }
-        return super.onStartCommand(intent, flags, startId);
-    }
+
+
+        @RequiresApi(api = Build.VERSION_CODES.O)
+        private void createNotificationChanel() {
+            String notificationChannelId = "Location channel id";
+            String channelName = "Background Service";
+
+            NotificationChannel chan = new NotificationChannel(
+                    notificationChannelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_NONE
+            );
+            chan.setLightColor(Color.BLUE);
+            chan.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+
+            NotificationManager manager = getSystemService(NotificationManager.class);
+
+            manager.createNotificationChannel(chan);
+
+            NotificationCompat.Builder notificationBuilder =
+                    new NotificationCompat.Builder(this, notificationChannelId);
+
+            Notification notification = notificationBuilder.setOngoing(true)
+                    .setContentTitle("Location updates:")
+                    .setPriority(NotificationManager.IMPORTANCE_MIN)
+                    .setCategory(Notification.CATEGORY_SERVICE)
+                    .build();
+            startForeground(2, notification);
+        }
+
+        @Override
+        public int onStartCommand(Intent intent, int flags, int startId) {
+            super.onStartCommand(intent, flags, startId);
+            return START_STICKY;
+        }
+
+        @Override
+        public void onDestroy() {
+            super.onDestroy();
+            fusedLocationClient.removeLocationUpdates(locationCallback);
+        }
+
+        @Override
+        public IBinder onBind(Intent intent) {
+            return null;
+        }
 }
+
